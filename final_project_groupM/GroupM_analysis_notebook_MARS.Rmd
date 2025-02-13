@@ -1,0 +1,391 @@
+---
+title: "GroupM Analysis Notebook MARS"
+author: "GroupM"
+date: "2025-02-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This R notebook details the implementation of MARS on the 3 different datasets, using the earth package to set up the models.
+
+## Data Import and Cleaning
+
+```{r}
+# Install packages if not already installed
+if (!requireNamespace("Metrics", quietly = TRUE)) install.packages("Metrics", quiet = TRUE)
+if (!requireNamespace("earth", quietly = TRUE)) install.packages("earth", quiet = TRUE)
+if (!requireNamespace("MASS", quietly = TRUE)) install.packages("MASS", quiet = TRUE)
+
+# Load packages with suppressed warnings
+suppressWarnings({
+  suppressPackageStartupMessages({
+    library(MASS)    # Load the MASS package for robust linear models
+    library(earth)   # Load earth package for MARS
+    library(Metrics) # Load Metrics package for MAE, RMSE, MAPE
+  })
+})
+```
+
+```{r}
+# Load the CleanDataset.csv file
+clean_dataset <- read.csv('data/Clean_Dataset.csv')
+clean_dataset <- clean_dataset[, !(names(clean_dataset) %in% c("X", "flight"))]
+
+allclasses_dataset <- clean_dataset
+economy_dataset <- clean_dataset[clean_dataset$class == "Economy", ]
+business_dataset <- clean_dataset[clean_dataset$class == "Business", ]
+```
+
+```{r}
+# Scale the values of the columns duration and days_left
+allclasses_dataset$duration <- scale(allclasses_dataset$duration)
+allclasses_dataset$days_left <- scale(allclasses_dataset$days_left)
+economy_dataset$duration <- scale(economy_dataset$duration)
+economy_dataset$days_left <- scale(economy_dataset$days_left)
+business_dataset$duration <- scale(business_dataset$duration)
+business_dataset$days_left <- scale(business_dataset$days_left)
+```
+
+```{r}
+# Use log transformation for price
+allclasses_dataset$price <- log(allclasses_dataset$price)
+economy_dataset$price <- log(economy_dataset$price)
+business_dataset$price <- log(business_dataset$price)
+```
+
+```{r}
+# Remove the class column for the separate models
+economy_dataset$class <- NULL
+business_dataset$class <- NULL
+```
+
+```{r}
+# Show the dimensions and the first rows of the datasets
+cat("\nDimensions of the full dataset (all classes):\n")
+dim(allclasses_dataset)
+cat("\nFirst rows of the full dataset (all classes):\n")
+head(allclasses_dataset)
+cat("\nDimensions of the economy class dataset:\n")
+dim(economy_dataset)
+cat("\nDimensions of the business class dataset:\n")
+dim(business_dataset)
+cat("\nFirst rows of the economy class dataset:\n")
+head(economy_dataset)
+cat("\nFirst rows of the business class dataset:\n")
+head(business_dataset)
+```
+
+```{r}
+set.seed(123)  # For reproducibility
+```
+
+```{r}
+# Create train and test sets for allclasses dataset
+train_indices_allclasses <- sample(1:nrow(allclasses_dataset),
+                                   size = 0.8 * nrow(allclasses_dataset))
+train_allclasses <- allclasses_dataset[train_indices_allclasses, ]
+test_allclasses <- allclasses_dataset[-train_indices_allclasses, ]
+```
+
+```{r}
+# Create train and test sets for economy dataset
+train_indices_economy <- sample(1:nrow(economy_dataset),
+                                size = 0.8 * nrow(economy_dataset))
+train_economy <- economy_dataset[train_indices_economy, ]
+test_economy <- economy_dataset[-train_indices_economy, ]
+```
+
+```{r}
+# Create train and test sets for business dataset
+train_indices_business <- sample(1:nrow(business_dataset),
+                                 size = 0.8 * nrow(business_dataset))
+train_business <- business_dataset[train_indices_business, ]
+test_business <- business_dataset[-train_indices_business, ]
+```
+
+```{r}
+# Show the dimensions and the first rows of the train and test sets
+cat("Dimensions of training set for all classes (80% of data):\n")
+dim(train_allclasses)
+```
+```{r}
+cat("\nDimensions of test set for all classes (20% of data):\n") 
+dim(test_allclasses)
+```
+```{r}
+cat("\nDimensions of training set for economy class (80% of data):\n")
+dim(train_economy)
+```
+```{r}
+cat("\nDimensions of test set for economy class (20% of data):\n")
+dim(test_economy)
+```
+```{r}
+cat("\nDimensions of training set for business class (80% of data):\n")
+dim(train_business)
+```
+```{r}
+cat("\nDimensions of test set for business class (20% of data):\n")
+dim(test_business)
+```
+## MARS - Complete model
+
+```{r}
+# Construct the formula for the model with grade 2 numerical variables
+formula <- as.formula(paste("price ~", 
+                            paste(c(names(train_allclasses)[-which(names(train_allclasses) == "price")], 
+    "I(duration^2)", "I(days_left^2)"), collapse = " + ")))
+cat("Constructed formula for the model:\n")
+print(formula)
+```
+Train the model using the internal algorithm to automatically choose terms and predictors:
+
+```{r}
+# Create MARS model for allclasses
+mars_model_allclasses <- earth(formula,
+                             data = train_allclasses,
+                             degree = 4,  # Fixed degree
+                            )
+# Print model results
+summary(mars_model_allclasses)
+
+par(mfrow = c(2, 2))  # Set up the plotting area
+plot(mars_model_allclasses)
+```
+We will use the evimp function from the 'earth' package to obtain the variable importance from the MARS model.
+
+```{r, fig.width=10, fig.height=6}
+evimp <- evimp(mars_model_allclasses, trim=TRUE, sqrt.=TRUE)
+plot(evimp)
+```
+The plot illustrates the importance of the variables in the MARS model, highlighting that the most important predictor is the class, followed by the two numerical variables of degree 1.
+
+```{r}
+# Make predictions first
+test_allclasses$duration_squared <- test_allclasses$duration^2
+test_allclasses$days_left_squared <- test_allclasses$days_left^2
+predictions_allclasses <- predict(mars_model_allclasses, newdata = test_allclasses)
+
+# Calculate the residuals
+residuals_mars_allclasses <- test_allclasses$price - predictions_allclasses
+
+# Calculate the log-likelihood (fixed array conformability issue)
+log_likelihood <- -0.5 * length(residuals_mars_allclasses) * (log(2 * pi) +
+                  log(var(residuals_mars_allclasses))) - 
+                  sum(residuals_mars_allclasses^2) / (2 * var(residuals_mars_allclasses))
+
+# Calculate AIC and BIC
+n <- length(residuals_mars_allclasses)  # Number of observations
+k <- length(mars_model_allclasses$coefficients)  # Number of parameters
+
+aic_value <- -2 * log_likelihood + 2 * k
+bic_value <- -2 * log_likelihood + log(n) * k
+
+# Print the results
+cat("allclasses Model Performance:\n")
+cat("AIC:", aic_value, "\n")
+cat("BIC:", bic_value, "\n")
+
+# Performance metrics for allclasses model using test set
+# R^2 for log-transformed data
+r2_allclasses_log <- 1 - sum((residuals_mars_allclasses)^2) / 
+  sum((test_allclasses$price - mean(test_allclasses$price))^2)
+
+# R^2 for original scale data
+r2_allclasses_orig <- 1 - sum((exp(test_allclasses$price) - exp(predictions_allclasses))^2) / 
+                      sum((exp(test_allclasses$price) - mean(exp(test_allclasses$price)))^2)
+
+mae_allclasses <- mae(exp(test_allclasses$price), exp(predictions_allclasses))  
+rmse_allclasses <- rmse(exp(test_allclasses$price), exp(predictions_allclasses))  
+mape_allclasses <- mape(exp(test_allclasses$price), exp(predictions_allclasses)) 
+
+cat("R^2 (log scale):", r2_allclasses_log, "\n")
+cat("R^2 (original scale):", r2_allclasses_orig, "\n")
+cat("MAE:", mae_allclasses, "\n")
+cat("RMSE:", rmse_allclasses, "\n")
+cat("MAPE:", mape_allclasses * 100, "%\n")
+```
+```{r}
+# Create a histogram of the residuals
+hist(residuals_mars_allclasses, breaks = 30, main = "Histogram of Residuals",
+     xlab = "Residuals", ylab = "Frequency", col = "lightblue", border = "black", freq = FALSE)
+
+# Add a density curve
+lines(density(residuals_mars_allclasses), col = "red", lwd = 2)
+```
+
+## MARS - Economy model
+
+```{r}
+# Construct the formula for the model, excluding the 'class' column
+formula <- as.formula(paste("price ~", 
+          paste(c(names(train_allclasses)[-which(names(train_allclasses) %in% c("price", "class"))], 
+    "I(duration^2)", "I(days_left^2)"), collapse = " + ")))
+cat("Constructed formula for the model:\n")
+print(formula)
+```
+```{r}
+# Create MARS model for economy dataset with fixed parameters
+mars_model_economy <- earth(formula, 
+                             data = train_economy,  # Changed to use train dataset
+                             degree = 4,  # Fixed degree
+                            )
+
+# Print model results
+summary(mars_model_economy)
+```
+
+```{r}
+par(mfrow = c(2, 2))  # Set up the plotting area
+plot(mars_model_economy)
+```
+
+```{r, fig.width=10, fig.height=6}
+evimp <- evimp(mars_model_economy, trim=TRUE, sqrt.=TRUE)
+plot(evimp)
+```
+
+```{r}
+# Predictions and performance metrics for economy model
+test_economy$duration_squared <- test_economy$duration^2
+test_economy$days_left_squared <- test_economy$days_left^2
+predictions_economy <- predict(mars_model_economy, newdata = test_economy)
+
+# Calculate the residuals
+residuals_mars_economy <- test_economy$price - predictions_economy
+
+# Calculate the log-likelihood (fixed array conformability issue)
+log_likelihood <- -0.5 * length(residuals_mars_economy) * (log(2 * pi) + 
+                  log(var(residuals_mars_economy))) - 
+                  sum(residuals_mars_economy^2) / (2 * var(residuals_mars_economy))
+
+# Calculate AIC and BIC
+n <- length(residuals_mars_economy)  # Number of observations
+k <- length(mars_model_economy$coefficients)  # Number of parameters
+
+aic_value <- -2 * log_likelihood + 2 * k
+bic_value <- -2 * log_likelihood + log(n) * k
+
+# Print the results
+cat("Economy Model Performance:\n")
+cat("AIC:", aic_value, "\n")
+cat("BIC:", bic_value, "\n")
+
+# Performance metrics for allclasses model using test set
+# R^2 for log-transformed data
+r2_economy_log <- 1 - sum((residuals_mars_economy)^2) / 
+  sum((test_economy$price - mean(test_economy$price))^2)
+
+# R^2 for original scale data
+r2_economy_orig <- 1 - sum((exp(test_economy$price) - exp(predictions_economy))^2) / 
+                      sum((exp(test_economy$price) - mean(exp(test_economy$price)))^2)
+
+# Calculate performance metrics
+mae_economy <- mae(exp(test_economy$price), exp(predictions_economy))  
+rmse_economy <- rmse(exp(test_economy$price), exp(predictions_economy))  
+mape_economy <- mape(exp(test_economy$price), exp(predictions_economy))  
+
+
+# Print performance results
+cat("R^2 Test (log scale):", r2_economy_log, "\n")
+cat("R^2 Test (original scale):", r2_economy_orig, "\n")
+cat("MAE:", mae_economy, "\n")
+cat("RMSE:", rmse_economy, "\n")
+cat("MAPE:", mape_economy * 100, "%\n")
+
+```
+```{r}
+# Create a histogram of the residuals
+hist(residuals_mars_economy, breaks = 30, main = "Histogram of Residuals",
+     xlab = "Residuals", ylab = "Frequency", col = "lightblue", border = "black", freq = FALSE)
+
+# Add a density curve
+lines(density(residuals_mars_economy), col = "red", lwd = 2)
+```
+
+## MARS - Business Model
+
+```{r}
+# Construct the formula for the model, excluding the 'class' column
+formula <- as.formula(paste("price ~",
+          paste(c(names(train_allclasses)[-which(names(train_allclasses) %in% c("price", "class"))], 
+    "I(duration^2)", "I(days_left^2)"), collapse = " + ")))
+cat("Constructed formula for the model:\n")
+print(formula)
+```
+
+```{r}
+# Create MARS model for business dataset with fixed parameters
+mars_model_business <- earth(formula, 
+                             data = train_business,
+                             degree = 4,  # Fixed degree
+                            )
+
+# Print model results
+summary(mars_model_business)
+```
+
+```{r}
+par(mfrow = c(2, 2))  # Set up the plotting area
+plot(mars_model_business)
+```
+
+```{r}
+# Make predictions first
+test_business$duration_squared <- test_business$duration^2
+test_business$days_left_squared <- test_business$days_left^2
+predictions_business <- predict(mars_model_business, newdata = test_business)
+
+# Calculate the residuals
+residuals_mars_business <- test_business$price - predictions_business
+
+# Calculate the log-likelihood (fixed array conformability issue)
+log_likelihood <- -0.5 * length(residuals_mars_business) * (log(2 * pi) +
+                  log(var(residuals_mars_business))) - 
+                  sum(residuals_mars_business^2) / (2 * var(residuals_mars_business))
+
+# Calculate AIC and BIC
+n <- length(residuals_mars_business)  # Number of observations
+k <- length(mars_model_business$coefficients)  # Number of parameters
+
+aic_value <- -2 * log_likelihood + 2 * k
+bic_value <- -2 * log_likelihood + log(n) * k
+
+# Print the results
+cat("Business Model Performance:\n")
+cat("AIC:", aic_value, "\n")
+cat("BIC:", bic_value, "\n")
+
+# Performance metrics for allclasses model using test set
+# R^2 for log-transformed data
+r2_business_log <- 1 - sum((residuals_mars_business)^2) / 
+  sum((test_business$price - mean(test_business$price))^2)
+
+# R^2 for original scale data
+r2_business_orig <- 1 - sum((exp(test_business$price) - exp(predictions_business))^2) / 
+                      sum((exp(test_business$price) - mean(exp(test_business$price)))^2)
+
+mae_business <- mae(exp(test_business$price), exp(predictions_business)) 
+rmse_business <- rmse(exp(test_business$price), exp(predictions_business))  
+mape_business <- mape(exp(test_business$price), exp(predictions_business))  
+
+
+cat("R^2 TEST (log scale):", r2_business_log, "\n")
+cat("R^2 TEST (original scale):", r2_business_orig, "\n")
+cat("MAE:", mae_business, "\n")
+cat("RMSE:", rmse_business, "\n")
+cat("MAPE:", mape_business * 100, "%\n")
+```
+
+```{r}
+# Create a histogram of the residuals
+hist(residuals_mars_business, breaks = 30, main = "Histogram of Residuals",
+     xlab = "Residuals", ylab = "Frequency", col = "lightblue", border = "black", freq = FALSE)
+
+# Add a density curve
+lines(density(residuals_mars_business), col = "red", lwd = 2)
+```
+
