@@ -1,6 +1,6 @@
 # STATISTICAL_METHODS_24_25
 
-This repository contains materials for the **Statistical Methods** course for the academic year 2024-2025. It includes homework projects and a final project, all designed to reinforce key concepts and techniques in statistical analysis and data science.
+This repository contains materials for the **Statistical Methods** course for the academic year 2024-2025. This course is offered by UniTS (Università degli Studi di Trieste), Trieste, Italy.
 
 ---
 
