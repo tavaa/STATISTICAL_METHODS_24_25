@@ -41,7 +41,7 @@ Each homework project focuses on specific statistical methods and includes:
    git clone https://github.com/tavaa/STATISTICAL_METHODS_24_25.git
    ```
 
-## Refrerences
+## Refererences
 
 1. Foundations of Statistics for Data Scientists - With R and Python by Alan Agresti and Maria Kateri: https://www.taylorfrancis.com/books/mono/10.1201/9781003159834/foundations-statistics-data-scientists-alan-agresti-maria-kateri
 2. Core Statistics by Simon N. Wood: https://archive.org/details/corestatistics0000wood
