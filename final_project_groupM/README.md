@@ -48,7 +48,7 @@ This **advanced analysis** focuses on a dataset of internal flights, aiming to u
 
 1. **Clone or Download the Repository**  
 
-   Once the repository is uploaded to GitHub, clone or download it to your local machine.
+   Clone or download it to your local machine.
 
 2. **Create a Virtual Environment for your project**
 
@@ -79,7 +79,7 @@ This **advanced analysis** focuses on a dataset of internal flights, aiming to u
 
 ## Contributions
 
-**AuthorS**
+**Authors**
 
 * Ricatti Luca <luca.ricatti@studenti.units.it>
 * Tavano Matteo <matteo.tavano@studenti.units.it>
